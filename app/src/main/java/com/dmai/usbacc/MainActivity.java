@@ -1,105 +1,79 @@
 package com.dmai.usbacc;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.hardware.usb.UsbAccessory;
-import android.hardware.usb.UsbManager;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Looper;
-import android.os.Message;
-import android.os.ParcelFileDescriptor;
-import android.text.TextUtils;
 import android.text.method.ScrollingMovementMethod;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.hj.data_proxy.ErrorCode;
+import com.hj.data_proxy.NetConnection;
+import com.hj.data_proxy.TcpConnection;
+import com.hj.data_proxy.UsbDataProxy;
+import com.hj.data_proxy.log.CatLogger;
+import com.hj.data_proxy.log.LogLevel;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
+    private static final String TAG = "ProxyDemo";
     private static final String ACTION_USB_PERMISSION =
             "com.android.example.USB_PERMISSION";
 
     private TextView mResultTxt;
-    private Button mScanBtn;
-    private Button mClearBtn;
-    private Button mConnectBtn;
-    private Button mDisconnectBtn;
-    private EditText mContentEdt;
-    private Button mSendBtn;
+    private Button mCreateProxyBtn;
+    private Button mDestroyProxyBtn;
+    private Button mConnectProxyBtn;
+    private Button mDisconnProxyBtn;
+    private Button mCreateTcpBtn;
+    private Button mConnectTcpBtn;
+    private Button mSendTcpBtn;
+    private Button mCloseTcpBtn;
+    private EditText mLocalPortTcpEdt;
+    private EditText mServerSocketTcpEdt;
+    private EditText mContentTcpEdt;
 
     private Toast mToast;
-
-    private UsbManager mUsbManager;
-
-    private BroadcastReceiver mReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (ACTION_USB_PERMISSION.equals(action)) {
-                UsbAccessory accessory = (UsbAccessory) intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
-                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                    showTip("授权成功");
-                } else {
-                    showTip("未授权");
-                }
-            } else if (UsbManager.ACTION_USB_ACCESSORY_ATTACHED.equals(action)) {
-                UsbAccessory accessory = (UsbAccessory) intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
-                printResult("acc_attached", accToString(accessory), false);
-            } else if (UsbManager.ACTION_USB_ACCESSORY_DETACHED.equals(action)) {
-                UsbAccessory accessory = (UsbAccessory) intent.getParcelableExtra(UsbManager.EXTRA_ACCESSORY);
-                printResult("acc_detached", accToString(accessory), false);
-
-                disconnect();
-            }
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mUsbManager = (UsbManager) getSystemService(USB_SERVICE);
-
         initUI();
 
-        registerReceivers();
+        CatLogger.getInstance().setPrintLogLevel(LogLevel.DEBUG);
     }
 
     private void initUI() {
         mResultTxt = (TextView) findViewById(R.id.txt_result);
-        mScanBtn = (Button) findViewById(R.id.btn_scan);
-        mClearBtn = (Button) findViewById(R.id.btn_clear);
-        mConnectBtn = (Button) findViewById(R.id.btn_connect);
-        mDisconnectBtn = (Button) findViewById(R.id.btn_disconnect);
-        mContentEdt = (EditText) findViewById(R.id.edt_content);
-        mSendBtn = (Button) findViewById(R.id.btn_send);
+        mCreateProxyBtn = (Button) findViewById(R.id.btn_createProxy);
+        mDestroyProxyBtn = (Button) findViewById(R.id.btn_destroyProxy);
+        mConnectProxyBtn = (Button) findViewById(R.id.btn_connectProxy);
+        mDisconnProxyBtn = (Button) findViewById(R.id.btn_disconnProxy);
+        mCreateTcpBtn = (Button) findViewById(R.id.btn_createTcp);
+        mConnectTcpBtn = (Button) findViewById(R.id.btn_connectTcp);
+        mSendTcpBtn = (Button) findViewById(R.id.btn_sendTcp);
+        mCloseTcpBtn = (Button) findViewById(R.id.btn_closeTcp);
+        mLocalPortTcpEdt = (EditText) findViewById(R.id.edt_portTcp);
+        mServerSocketTcpEdt = (EditText) findViewById(R.id.edt_server_socketTcp);
+        mContentTcpEdt = (EditText) findViewById(R.id.edt_contentTcp);
 
         mToast = Toast.makeText(this, "", Toast.LENGTH_SHORT);
 
         mResultTxt.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-        mScanBtn.setOnClickListener(this);
-        mClearBtn.setOnClickListener(this);
-        mConnectBtn.setOnClickListener(this);
-        mDisconnectBtn.setOnClickListener(this);
-        mSendBtn.setOnClickListener(this);
+        mCreateProxyBtn.setOnClickListener(this);
+        mDestroyProxyBtn.setOnClickListener(this);
+        mConnectProxyBtn.setOnClickListener(this);
+        mDisconnProxyBtn.setOnClickListener(this);
+        mCreateTcpBtn.setOnClickListener(this);
+        mConnectTcpBtn.setOnClickListener(this);
+        mSendTcpBtn.setOnClickListener(this);
+        mCloseTcpBtn.setOnClickListener(this);
     }
 
     private String accToString(UsbAccessory acc) {
@@ -107,7 +81,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         sb.append("\tManu=").append(acc.getManufacturer()).append("\n")
             .append("\tDes=").append(acc.getDescription()).append("\n")
             .append("\tModel=").append(acc.getModel()).append("\n")
-            .append("\tSerial=").append(acc.getSerial()).append("\n")
             .append("\tUri=").append(acc.getUri()).append("\n");
 
         return sb.toString();
@@ -126,157 +99,243 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mResultTxt.scrollTo(0, 0);
     }
 
-    private PendingIntent mPermissionIntent;
-
-    private void registerReceivers() {
-        mPermissionIntent = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
-        IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
-        filter.addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED);
-        filter.addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED);
-        registerReceiver(mReceiver, filter);
-    }
-
-    private void unregisterReceivers() {
-        unregisterReceiver(mReceiver);
-    }
-
-    private void requestPermission(UsbAccessory acc) {
-        mUsbManager.requestPermission(acc, mPermissionIntent);
-    }
-
-    private void scan() {
-        UsbAccessory[] accArray = mUsbManager.getAccessoryList();
-        if (accArray == null) {
-            showTip("未检测到设备");
-
-            printResult("scan", "none", true);
-        } else {
-            StringBuilder sb = new StringBuilder();
-            for (UsbAccessory acc : accArray) {
-                if (mUsbManager.hasPermission(acc)) {
-                    sb.append(accToString(acc)).append("\n");
-                } else {
-                    requestPermission(acc);
-
-                    return;
-                }
-            }
-
-            printResult("scan", sb.toString(), false);
-        }
-    }
-
     private void clear() {
         mResultTxt.setText("");
-    }
-
-    private ParcelFileDescriptor mFileDescriptor;
-    private HandlerThread mSendThread;
-    private SendHandler mSendHandler;
-    private RecvThread mRecvThread;
-
-    private boolean mIsConnected = false;
-
-    private void connect() {
-        if (mIsConnected) {
-            showTip("不要重复连接");
-            return;
-        }
-
-        UsbAccessory[] accArray = mUsbManager.getAccessoryList();
-        if (accArray == null) {
-            showTip("未检测到设备");
-
-            printResult("scan", "none", true);
-        } else {
-            mFileDescriptor = mUsbManager.openAccessory(accArray[0]);
-
-            mSendThread = new HandlerThread("sender");
-            mSendThread.start();
-            mSendHandler = new SendHandler(mSendThread.getLooper());
-
-            mRecvThread = new RecvThread();
-            mRecvThread.start();
-
-            showTip("连接成功");
-
-            printResult("connect", "success", true);
-
-            mIsConnected = true;
-        }
-    }
-
-    private void disconnect() {
-        if (!mIsConnected) {
-            return;
-        }
-
-        mSendHandler.removeMessages(MSG_SEND);
-        mSendHandler.sendEmptyMessage(MSG_CLOSE);
-        mSendThread.quitSafely();
-        mRecvThread.stopRun();
-
-        if (mFileDescriptor != null) {
-            try {
-                mFileDescriptor.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        mIsConnected = false;
-
-        showTip("断开连接");
-
-        printResult("disconnect", "success", true);
-    }
-
-    private void send() {
-        if (!mIsConnected) {
-            showTip("未连接");
-            return;
-        }
-
-        String content = mContentEdt.getText().toString();
-        if (TextUtils.isEmpty(content)) {
-            content = "empty";
-        }
-
-        Message.obtain(mSendHandler, MSG_SEND, content).sendToTarget();
-
-        printResult("send", content, true);
     }
 
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
-            case R.id.btn_scan: {
-                scan();
+            case R.id.btn_createProxy: {
+                createProxy();
             } break;
 
-            case R.id.btn_clear: {
-                clear();
+            case R.id.btn_destroyProxy: {
+                destroyProxy();
             } break;
 
-            case R.id.btn_connect: {
-                connect();
+            case R.id.btn_connectProxy: {
+                connectProxy();
             } break;
 
-            case R.id.btn_disconnect: {
-                disconnect();
+            case R.id.btn_disconnProxy: {
+                disconnectProxy();
             } break;
 
-            case R.id.btn_send: {
-                send();
+            case R.id.btn_createTcp: {
+                createTcp();
+            } break;
+
+            case R.id.btn_connectTcp: {
+                connectTcp();
+            } break;
+
+            case R.id.btn_sendTcp: {
+                sendTcp();
+            } break;
+
+            case R.id.btn_closeTcp: {
+                closeTcp();
             } break;
         }
     }
+
+    private void createProxy() {
+        if (mUsbDataProxy != null) {
+            showTip("不要重复创建");
+            return;
+        }
+
+        mUsbDataProxy = UsbDataProxy.createInstance(this, mUsbListener);
+        if (mUsbDataProxy == null) {
+            showTip("创建出错");
+        }
+
+        showTip("创建成功");
+    }
+
+    private void destroyProxy() {
+        if (mUsbDataProxy == null) {
+            showTip("Proxy为空");
+            return;
+        }
+
+        mUsbDataProxy.destroy();
+        mUsbDataProxy = null;
+
+        showTip("销毁成功");
+    }
+
+    private void connectProxy() {
+        if (mUsbDataProxy == null) {
+            showTip("Proxy为空");
+            return;
+        }
+
+        int ret = mUsbDataProxy.connect();
+        if (ErrorCode.SUCCESS != ret) {
+            showTip("error=" + ret);
+        }
+    }
+
+    private void disconnectProxy() {
+        if (mUsbDataProxy == null) {
+            showTip("Proxy为空");
+            return;
+        }
+
+        mUsbDataProxy.disconnect();
+    }
+
+    private int getLocalTcpPort() {
+        String port = mLocalPortTcpEdt.getText().toString();
+
+        return Integer.parseInt(port);
+    }
+
+    private void createTcp() {
+        if (mUsbDataProxy == null) {
+            showTip("Proxy为空");
+            return;
+        }
+
+
+        if (mTcpConn != null) {
+            showTip("不要重复创建");
+            return;
+        }
+
+        int localPort = getLocalTcpPort();
+        mTcpConn = (TcpConnection) mUsbDataProxy.createNetConn(UsbDataProxy.CONN_TYPE_TCP, localPort);
+
+        if (mTcpConn == null) {
+            showTip("创建失败");
+            return;
+        }
+
+        mTcpConn.setListener(mTcpListener);
+
+        showTip("创建成功");
+    }
+
+    private void connectTcp() {
+        if (mUsbDataProxy == null) {
+            showTip("Proxy为空");
+            return;
+        }
+
+        if (mTcpConn == null) {
+            showTip("TcpConn为空");
+            return;
+        }
+
+        String socketStr = mServerSocketTcpEdt.getText().toString();
+        String[] parts = socketStr.split(":");
+
+        if (parts.length != 2) {
+            showTip("socket无效");
+            return;
+        }
+
+        String serverIP = parts[0];
+        int serverPort = Integer.parseInt(parts[1]);
+
+        CatLogger.d(TAG, "try to connect %s:%d", serverIP, serverPort);
+
+        int ret = mTcpConn.connect(serverIP, serverPort);
+        if (ErrorCode.SUCCESS != ret) {
+            showTip("error=" + ret);
+            return;
+        }
+
+        showTip("Tcp连接成功");
+    }
+
+    private void sendTcp() {
+        if (mTcpConn == null) {
+            showTip("TcpConn为空");
+            return;
+        }
+
+        String content = mContentTcpEdt.getText().toString();
+
+        int ret = mTcpConn.send(content.getBytes());
+        if (ErrorCode.SUCCESS != ret) {
+            showTip("error=" + ret);
+        }
+    }
+
+    private void closeTcp() {
+        if (mTcpConn == null) {
+            showTip("TcpConn为空");
+            return;
+        }
+
+        mTcpConn.close();
+    }
+
+    private UsbDataProxy mUsbDataProxy;
+
+    private UsbDataProxy.UsbListener mUsbListener = new UsbDataProxy.UsbListener() {
+        @Override
+        public void onAccessoryAttached(UsbAccessory accessory) {
+            printResult("attached", accToString(accessory), false);
+        }
+
+        @Override
+        public void onAccessoryDetached(UsbAccessory accessory) {
+            printResult("detached", accToString(accessory), false);
+        }
+
+        @Override
+        public void onPermissionResult(UsbAccessory accessory, boolean isGranted) {
+            printResult("permission", "isGranted=" + isGranted, true);
+        }
+
+        @Override
+        public void onConnected(UsbAccessory accessory) {
+            printResult("connected", accToString(accessory), false);
+        }
+
+        @Override
+        public void onDisconnected() {
+            printResult("disconnected", "", true);
+        }
+    };
+
+    private TcpConnection mTcpConn;
+
+    private NetConnection.ConnectionListener mTcpListener = new NetConnection.ConnectionListener() {
+        @Override
+        public void onRecv(byte[] data, String ip, int port) {
+            final String s = "fromIP=" + ip + ", fromPort=" + port + ", dataLen=" + data.length;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    printResult("recv", s, true);
+                }
+            });
+        }
+
+        @Override
+        public void onError(int error, String des) {
+            final String s = "error=" + error + ", des=" + des;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    printResult("error", s, true);
+                }
+            });
+        }
+    };
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
 
-        unregisterReceivers();
+        if (mUsbDataProxy != null) {
+            mUsbDataProxy.destroy();
+        }
     }
 
     private void showTip(final String tip) {
@@ -289,81 +348,4 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         });
     }
 
-    private static final int MSG_SEND = 1;
-    private static final int MSG_CLOSE = 2;
-
-    private class SendHandler extends Handler {
-        private OutputStream mOs;
-
-        public SendHandler(Looper looper) {
-            super(looper);
-
-            try {
-                mOs = new FileOutputStream(mFileDescriptor.getFileDescriptor());
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        @Override
-        public void handleMessage(@NonNull Message msg) {
-            switch (msg.what) {
-                case MSG_SEND: {
-                    String content = (String) msg.obj;
-                    byte[] data = content.getBytes();
-
-                    try {
-                        mOs.write(data, 0, data.length);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                } break;
-
-                case MSG_CLOSE: {
-                    if (mOs != null) {
-                        try {
-                            mOs.close();
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                } break;
-            }
-        }
-    }
-
-    private class RecvThread extends Thread {
-        private boolean mStop = false;
-
-        public void stopRun() {
-            mStop = true;
-        }
-
-        @Override
-        public void run() {
-            try {
-                InputStream ins = new FileInputStream(mFileDescriptor.getFileDescriptor());
-                byte[] buffer = new byte[16384];
-
-                while (!mStop) {
-                    int len = ins.read(buffer);
-                    Log.d("usbacc", "recv, len=" + len);
-
-                    if (len > 0) {
-                        final String content = new String(buffer, 0, len);
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                printResult("recv", content, true);
-                            }
-                        });
-                    }
-                }
-
-                ins.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
 }

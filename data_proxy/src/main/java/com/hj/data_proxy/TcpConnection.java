@@ -12,13 +12,25 @@ public class TcpConnection extends NetConnection {
 
     @Override
     public int connect(String ip, int port) {
+        if (mIsConnected) {
+            return ErrorCode.ERROR_INVALID_OPERATION;
+        }
+
         int ret = mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.TCP, Proxy.MsgType.CONNECT, ip, port,
                     0, 0, "", null);
+        if (ErrorCode.SUCCESS == ret) {
+            mIsConnected = true;
+        }
+
         return ret;
     }
 
     @Override
     public int send(byte[] data) {
+        if (!mIsConnected) {
+            return ErrorCode.ERROR_INVALID_OPERATION;
+        }
+
         int ret = mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.TCP, Proxy.MsgType.SEND, "", 0,
                 0, 0, "", data);
         return ret;
@@ -26,6 +38,15 @@ public class TcpConnection extends NetConnection {
 
     @Override
     public void close() {
+        if (!mIsConnected) {
+            return;
+        }
+
+        if (mIsClosed) {
+            return;
+        }
+
+        mIsClosed = true;
         mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.TCP, Proxy.MsgType.CLOSE, "", 0,
                 0, 0, "", null);
     }

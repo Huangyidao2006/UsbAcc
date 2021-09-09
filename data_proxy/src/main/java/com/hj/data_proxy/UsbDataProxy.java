@@ -11,6 +11,7 @@ import android.os.ParcelFileDescriptor;
 
 import com.google.protobuf.ByteString;
 import com.hj.data_proxy.buffer.DataBuffer;
+import com.hj.data_proxy.log.CatLogger;
 import com.hj.data_proxy.utils.DataUtil;
 import com.myusb.proxy.proto.Proxy;
 
@@ -19,6 +20,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -39,6 +41,8 @@ public class UsbDataProxy {
     private static int sCONNECTION_ID = 0;
 
     private static int sMSG_ID = 0;
+
+    private final Object mIdSynObj = new Object();
 
     private Context mContext;
 
@@ -182,6 +186,8 @@ public class UsbDataProxy {
         disconnect();
 
         unregisterReceivers();
+
+        sINSTANCE = null;
     }
 
     private static final int MAX_USB_FRAME_LEN = 16384;
@@ -200,6 +206,8 @@ public class UsbDataProxy {
 
         @Override
         public void run() {
+            CatLogger.i(TAG, "receive thread started");
+
             try {
                 InputStream ins = new FileInputStream(mFileDescriptor.getFileDescriptor());
                 byte[] buffer = new byte[MAX_USB_FRAME_LEN];
@@ -208,14 +216,24 @@ public class UsbDataProxy {
 
                 while (!mStop) {
                     int len = ins.read(buffer);
+                    CatLogger.d(TAG, "received usb data, len=%d", len);
+
                     if (len > 0) {
                         mFrameBuffer.push(buffer, len);
                         while (true) {
-                            if (FRAME_HEADER_LEN == mFrameBuffer.read(frameHeaderBuffer)) {
+                            int readLen = mFrameBuffer.read(frameHeaderBuffer);
+                            CatLogger.d(TAG, "read frame buffer, readLen=%d", readLen);
+
+                            if (FRAME_HEADER_LEN == readLen) {
+                                CatLogger.d(TAG, "read a frame header");
+
                                 // 读取帧头长度的数据，判断是否为帧头
                                 if (DataUtil.byteCompare(FRAME_BEGIN.getBytes(), frameHeaderBuffer, FRAME_BEGIN_LEN)) {
                                     // 获取帧数据长度
                                     frameDataLen = DataUtil.toInt(frameHeaderBuffer, FRAME_BEGIN_LEN);
+
+                                    CatLogger.d(TAG, "frameDataLen=%d", frameDataLen);
+
                                     if (FRAME_HEADER_LEN + frameDataLen <= mFrameBuffer.size()) {
                                         // 足够一帧数据，取出来用protobuf解析
                                         mFrameBuffer.pop(FRAME_HEADER_LEN);
@@ -230,6 +248,7 @@ public class UsbDataProxy {
                                     }
                                 } else {
                                     // 不是帧头，出错了
+                                    CatLogger.e(TAG, "wrong frame header");
                                     break;
                                 }
                             } else {
@@ -246,6 +265,8 @@ public class UsbDataProxy {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+
+            CatLogger.i(TAG, "receive thread stopped");
         }
     }
 
@@ -253,6 +274,9 @@ public class UsbDataProxy {
         int connId = proxyMsg.getConnId();
         int ackId = proxyMsg.getAckId();
         Proxy.MsgType msgType = proxyMsg.getMsgType();
+
+        CatLogger.d(TAG, "process received msg, connId=%d, ackId=%d, msgType=%s, ip=%s, port=%d",
+                connId, ackId, msgType.toString(), proxyMsg.getIp(), proxyMsg.getPort());
 
         if (Proxy.MsgType.RESULT == msgType) {
             MsgResult msgResult = mMsgResultMap.get(ackId);
@@ -311,9 +335,12 @@ public class UsbDataProxy {
         System.arraycopy(FRAME_BEGIN.getBytes(), 0, framePacket, 0, FRAME_BEGIN.length());
         byte[] dataLenBytes = DataUtil.toBytes(frameData.length);
         System.arraycopy(dataLenBytes, 0, framePacket, FRAME_BEGIN.length(), dataLenBytes.length);
-        System.arraycopy(frameData, 0, framePacket, FRAME_HEADER_LEN, framePacket.length);
+        System.arraycopy(frameData, 0, framePacket, FRAME_HEADER_LEN, frameData.length);
 
-        return writeToUsb(framePacket) == framePacket.length;
+        int ret = writeToUsb(framePacket);
+        CatLogger.d(TAG, "writeToUsb, ret=%d", ret);
+
+        return ret == framePacket.length;
     }
 
     int sendProxyMsg(int connId, Proxy.ConnType connType, Proxy.MsgType msgType,
@@ -321,8 +348,13 @@ public class UsbDataProxy {
         int msgId = getMsgId();
         int ackId = 0;
 
+        CatLogger.d(TAG, "sendProxyMsg, connId=%d, ackId=%d, msgType=%s, ip=%s, port=%d, " +
+                        "arg1=%d, arg2=%d, arg3=%s, arg4_len=%d",
+                connId, ackId, msgType.toString(), ip, port,
+                arg1, arg2, arg3 == null ? "" : arg3, arg4 == null ? 0 : arg4.length);
+
         Proxy.MsgData.Builder msgDataBuilder = Proxy.MsgData.newBuilder();
-        msgDataBuilder.setArg1(arg1).setArg2(arg2).setArg3(arg3);
+        msgDataBuilder.setArg1(arg1).setArg2(arg2).setArg3(arg3 == null ? "" : arg3);
         if (arg4 != null) {
             msgDataBuilder.setArg4(ByteString.copyFrom(arg4));
         }
@@ -353,7 +385,7 @@ public class UsbDataProxy {
 
             try {
                 // 等待结果返回
-                msgResult.mCond.wait(1000);
+                msgResult.mCond.await(1000, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             } finally {
@@ -372,21 +404,27 @@ public class UsbDataProxy {
             ret = ErrorCode.ERROR_USB_SEND;
         }
 
+        CatLogger.d(TAG, "sendProxyMsg, ret=%d", ret);
+
         return ret;
     }
 
     private int getConnId() {
-        int id = sCONNECTION_ID;
-        sCONNECTION_ID = (sCONNECTION_ID + 1) % Integer.MAX_VALUE;
+        synchronized (mIdSynObj) {
+            int id = sCONNECTION_ID;
+            sCONNECTION_ID = (sCONNECTION_ID + 1) % Integer.MAX_VALUE;
 
-        return id;
+            return id;
+        }
     }
 
     private int getMsgId() {
-        int id = sMSG_ID;
-        sMSG_ID = (sMSG_ID + 1) % Integer.MAX_VALUE;
+        synchronized (mIdSynObj) {
+            int id = sMSG_ID;
+            sMSG_ID = (sMSG_ID + 1) % Integer.MAX_VALUE;
 
-        return id;
+            return id;
+        }
     }
 
     private class MsgResult {
@@ -402,7 +440,7 @@ public class UsbDataProxy {
     public static final int CONN_TYPE_TCP = 1;
     public static final int CONN_TYPE_UDP = 2;
 
-    public synchronized NetConnection createNetConn(int connType) {
+    public NetConnection createNetConn(int connType, int port) {
         if (!mIsConnected) {
             return null;
         }
@@ -414,7 +452,7 @@ public class UsbDataProxy {
 
         switch (connType) {
             case CONN_TYPE_TCP: {
-                ret = sendProxyMsg(connId, Proxy.ConnType.TCP, Proxy.MsgType.CREATE, "", 0,
+                ret = sendProxyMsg(connId, Proxy.ConnType.TCP, Proxy.MsgType.CREATE, "", port,
                         0, 0, null, null);
                 if (ErrorCode.SUCCESS == ret) {
                     conn = new TcpConnection(this, connId);
@@ -422,7 +460,7 @@ public class UsbDataProxy {
             } break;
 
             case CONN_TYPE_UDP: {
-                ret = sendProxyMsg(connId, Proxy.ConnType.UDP, Proxy.MsgType.CREATE, "", 0,
+                ret = sendProxyMsg(connId, Proxy.ConnType.UDP, Proxy.MsgType.CREATE, "", port,
                         0, 0, null, null);
                 if (ErrorCode.SUCCESS == ret) {
                     conn = new UdpConnection(this, connId);

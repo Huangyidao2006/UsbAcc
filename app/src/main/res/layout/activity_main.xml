@@ -8,7 +8,7 @@
     <TextView
         android:id="@+id/txt_result"
         android:layout_width="match_parent"
-        android:layout_height="400dp"
+        android:layout_height="300dp"
         android:scrollbars="vertical"
         android:hint="operation result"
         android:textColor="@color/black"/>
@@ -20,18 +20,18 @@
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/btn_scan"
+            android:id="@+id/btn_createProxy"
             android:layout_weight="1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="scan"/>
+            android:text="Create_Proxy"/>
 
         <Button
-            android:id="@+id/btn_clear"
+            android:id="@+id/btn_destroyProxy"
             android:layout_weight="1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="clear"/>
+            android:text="Destroy_Proxy"/>
 
     </LinearLayout>
 
@@ -42,18 +42,18 @@
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/btn_connect"
+            android:id="@+id/btn_connectProxy"
             android:layout_weight="1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="connect"/>
+            android:text="Connect_Proxy"/>
 
         <Button
-            android:id="@+id/btn_disconnect"
+            android:id="@+id/btn_disconnProxy"
             android:layout_weight="1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="disconnect"/>
+            android:text="Disconn_Proxy"/>
 
     </LinearLayout>
 
@@ -64,18 +64,80 @@
         android:orientation="horizontal">
 
         <EditText
-            android:id="@+id/edt_content"
+            android:id="@+id/edt_portTcp"
             android:layout_weight="2"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="hello"/>
+            android:hint="local port"
+            android:text="1234"/>
 
         <Button
-            android:id="@+id/btn_send"
+            android:id="@+id/btn_createTcp"
             android:layout_weight="1"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="send"/>
+            android:text="Create_Tcp"/>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_marginTop="10dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/edt_server_socketTcp"
+            android:layout_weight="2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="server socket"
+            android:text="127.0.0.1:5678"/>
+
+        <Button
+            android:id="@+id/btn_connectTcp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Connect_Tcp"/>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_marginTop="10dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/edt_contentTcp"
+            android:layout_weight="2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:hint="message content"
+            android:text="hello"/>
+
+        <Button
+            android:id="@+id/btn_sendTcp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Send_Tcp"/>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_marginTop="10dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_closeTcp"
+            android:layout_weight="1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="Close_Tcp"/>
 
     </LinearLayout>
 

@@ -44,6 +44,7 @@ public class DataBuffer {
             mEnd = (mEnd + copyLen2) % (mCapacity + 1);
         } else {
             System.arraycopy(data, 0, mBuffer, mEnd, copyLen);
+            mEnd = (mEnd + copyLen) % (mCapacity + 1);
         }
 
         return copyLen;

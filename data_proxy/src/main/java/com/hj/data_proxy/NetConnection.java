@@ -5,7 +5,8 @@ package com.hj.data_proxy;
  */
 public abstract class NetConnection {
     protected int mId;
-    protected int mMsgId = 1;
+    protected boolean mIsConnected = false;
+    protected boolean mIsClosed = false;
     protected ConnectionListener mListener;
     protected UsbDataProxy mUsbDataProxy;
 

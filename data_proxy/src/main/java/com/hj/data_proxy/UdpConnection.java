@@ -19,6 +19,11 @@ public class UdpConnection extends NetConnection {
 
     @Override
     public void close() {
+        if (mIsClosed) {
+            return;
+        }
+
+        mIsClosed = true;
         mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.UDP, Proxy.MsgType.CLOSE, "", 0,
                 0, 0, "", null);
     }
