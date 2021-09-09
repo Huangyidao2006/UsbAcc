@@ -1,0 +1,36 @@
+syntax = "proto3";
+option java_package = "com.myusb.proxy.proto";
+option optimize_for = LITE_RUNTIME;
+
+enum ConnType {
+  TCP = 0;
+  UDP = 1;
+}
+
+enum MsgType {
+  CONNECT = 0;
+  SEND = 1;
+  RECV = 2;
+  CLOSE = 3;
+  ERROR = 4;
+  CREATE = 5;
+  RESULT = 6;
+}
+
+message MsgData {
+  int32 arg1 = 1;
+  int32 arg2 = 2;
+  string arg3 = 3;
+  bytes arg4 = 4;
+}
+
+message ProxyMsg {
+  int32 msgId = 1;
+  int32 ackId = 2;
+  int32 connId = 3;
+  ConnType connType = 4;
+  MsgType msgType = 5;
+  string ip = 6;
+  int32 port = 7;
+  MsgData data = 8;
+}

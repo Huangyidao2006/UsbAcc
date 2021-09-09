@@ -1,0 +1,3 @@
+include ':data_proxy'
+include ':app'
+rootProject.name = "UsbAcc"
