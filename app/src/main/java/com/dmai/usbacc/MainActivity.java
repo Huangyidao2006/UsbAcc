@@ -46,6 +46,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Button mCloseUdpBtn;
     private EditText mLocalPortEdt;
     private EditText mServerSocketTcpEdt;
+    private EditText mServerSocketUdpEdt;
     private EditText mSendContentEdt;
 
     private Toast mToast;
@@ -92,6 +93,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mCloseUdpBtn = (Button) findViewById(R.id.btn_closeUdp);
         mLocalPortEdt = (EditText) findViewById(R.id.edt_localPort);
         mServerSocketTcpEdt = (EditText) findViewById(R.id.edt_server_socketTcp);
+        mServerSocketUdpEdt = (EditText) findViewById(R.id.edt_server_socketUdp);
         mSendContentEdt = (EditText) findViewById(R.id.edt_sendContent);
 
         mToast = Toast.makeText(this, "", Toast.LENGTH_SHORT);
@@ -343,12 +345,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private void sendUdp() {
         if (mUdpConn == null) {
-            showTip("TcpConn为空");
+            showTip("UdpConn为空");
             return;
         }
 
         String content = mSendContentEdt.getText().toString();
-        String socketStr = mServerSocketTcpEdt.getText().toString();
+        String socketStr = mServerSocketUdpEdt.getText().toString();
         String[] parts = socketStr.split(":");
 
         if (parts.length != 2) {
@@ -377,7 +379,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private void closeUdp() {
         if (mUdpConn == null) {
-            showTip("TcpConn为空");
+            showTip("UdpConn为空");
             return;
         }
 
