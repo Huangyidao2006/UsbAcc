@@ -166,6 +166,8 @@ public class UsbDataProxy {
             return;
         }
 
+        closeAllNetConn();
+
         if (mRecvThread != null) {
             mRecvThread.stopRun();
         }
@@ -346,6 +348,15 @@ public class UsbDataProxy {
         return offset;
     }
 
+    private void closeAllNetConn() {
+        mMsgResultMap.clear();
+        mConnMap.clear();
+
+        // connId为-1，表示全局消息，并不是针对某条连接
+        sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.CLOSE_ALL,
+                "", 0, 0, 0, null, null);
+    }
+
     private boolean sendProxyMsg(Proxy.ProxyMsg proxyMsg) {
         byte[] frameData = proxyMsg.toByteArray();
         byte[] framePacket = new byte[FRAME_HEADER_LEN + frameData.length];
@@ -397,41 +408,53 @@ public class UsbDataProxy {
         int ret = 0;
 
         if (isSent) {
-            MsgResult msgResult = new MsgResult();
-            msgResult.mMsgId = msgId;
-            msgResult.mLock = new ReentrantLock();
-            msgResult.mCond = msgResult.mLock.newCondition();
-            mMsgResultMap.put(msgId, msgResult);
-
-            msgResult.mLock.lock();
-
-            try {
-                // 等待结果返回
-                msgResult.mCond.await(1000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                msgResult.mLock.unlock();
-            }
-
-            // 从map中去掉
-            mMsgResultMap.remove(msgId);
-
-            if (msgResult.mRet != null) {
-                if (msgResult.mRet.getMsgType() != Proxy.MsgType.RESULT) {
-                    ret = ErrorCode.ERROR_FAILED;
-                } else {
-                    ret = msgResult.mRet.getData().getArg1();
-                }
-            } else {
-                ret = ErrorCode.ERROR_FAILED;
+            if (Proxy.MsgType.CLOSE_ALL != msgType) {
+                ret = syncGetResult(msgId);
             }
         } else {
             ret = ErrorCode.ERROR_USB_SEND;
         }
 
+        if (Proxy.MsgType.CLOSE == msgType) {
+            mConnMap.remove(connId);
+        }
+
         CatLogger.d(TAG, "sendProxyMsg, ret=%d", ret);
 
+        return ret;
+    }
+
+    private int syncGetResult(int msgId) {
+        int ret;
+        MsgResult msgResult = new MsgResult();
+        msgResult.mMsgId = msgId;
+        msgResult.mLock = new ReentrantLock();
+        msgResult.mCond = msgResult.mLock.newCondition();
+        mMsgResultMap.put(msgId, msgResult);
+
+        msgResult.mLock.lock();
+
+        try {
+            // 等待结果返回
+            msgResult.mCond.await(1000, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            msgResult.mLock.unlock();
+        }
+
+        // 从map中去掉
+        mMsgResultMap.remove(msgId);
+
+        if (msgResult.mRet != null) {
+            if (msgResult.mRet.getMsgType() != Proxy.MsgType.RESULT) {
+                ret = ErrorCode.ERROR_FAILED;
+            } else {
+                ret = msgResult.mRet.getData().getArg1();
+            }
+        } else {
+            ret = ErrorCode.ERROR_FAILED;
+        }
         return ret;
     }
 
