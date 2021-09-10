@@ -222,9 +222,9 @@ public class UsbDataProxy {
                     CatLogger.d(TAG, "received usb data, len=%d", len);
 
                     if (len > 0) {
-                        mFrameBuffer.push(buffer, len);
+                        mFrameBuffer.push(buffer, 0, len);
                         while (true) {
-                            int readLen = mFrameBuffer.read(frameHeaderBuffer);
+                            int readLen = mFrameBuffer.read(frameHeaderBuffer, 0, frameHeaderBuffer.length);
                             CatLogger.d(TAG, "read frame buffer, readLen=%d", readLen);
 
                             if (FRAME_HEADER_LEN == readLen) {

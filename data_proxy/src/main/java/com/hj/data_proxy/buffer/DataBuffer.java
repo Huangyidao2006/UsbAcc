@@ -27,55 +27,71 @@ public class DataBuffer {
         return capacity() - size();
     }
 
-    public int push(byte[] data, int len) {
+    public int push(byte[] data, int offset, int len) {
         int left = left();
         if (left == 0) {
             return 0;
         }
 
-        int copyLen = Math.min(left, len);
-        if (mEnd + copyLen > mCapacity) {
-            int copyLen1 = mCapacity - mEnd;
-            int copyLen2 = copyLen - copyLen1;
+        int total = 0;
+        int writeLen = Math.min(left, len);
 
-            System.arraycopy(data, 0, mBuffer, mEnd, copyLen1);
-            mEnd = (mEnd + copyLen1) % (mCapacity + 1);
-            System.arraycopy(data, copyLen1, mBuffer, mEnd, copyLen2);
-            mEnd = (mEnd + copyLen2) % (mCapacity + 1);
+        if (mEnd + writeLen > mCapacity + 1) {
+            int partLen = mCapacity - mEnd + 1;
+            total += push(data, offset, partLen);
+            writeLen -= partLen;
+
+            if (writeLen != 0) {
+                total += push(data, offset + partLen, writeLen);
+            }
         } else {
-            System.arraycopy(data, 0, mBuffer, mEnd, copyLen);
-            mEnd = (mEnd + copyLen) % (mCapacity + 1);
+            if (writeLen != 0) {
+                System.arraycopy(data, offset, mBuffer, mEnd, writeLen);
+                mEnd = (mEnd + writeLen) % (mCapacity + 1);
+                total += writeLen;
+            }
         }
 
-        return copyLen;
+        return total;
     }
 
-    public int read(byte[] dst) {
-        int readLen = Math.min(size(), dst.length);
+    private int read(int srcStart, byte[] dst, int offset, int len) {
+        int readLen = Math.min(size(), len);
+        int total = 0;
 
-        if (mStart + readLen > mCapacity) {
-            int readLen1 = mCapacity - mStart;
-            int readLen2 = readLen - readLen1;
+        if (srcStart + readLen > mCapacity + 1) {
+            int partLen = mCapacity - srcStart + 1;
+            readLen -= read(srcStart, dst, offset, partLen);
+            total += partLen;
 
-            System.arraycopy(mBuffer, mStart, dst, 0, readLen1);
-            int pos = (mStart + readLen1) % (mCapacity + 1);
-            System.arraycopy(mBuffer, pos, dst, readLen1, readLen2);
+            srcStart = (srcStart + partLen) % (mCapacity + 1);
+
+            if (readLen != 0) {
+                total += read(srcStart, dst, offset + partLen, readLen);
+            }
         } else {
-            System.arraycopy(mBuffer, mStart, dst, 0, readLen);
+            if (readLen != 0) {
+                System.arraycopy(mBuffer, srcStart, dst, offset, readLen);
+                total += readLen;
+            }
         }
 
-        return readLen;
+        return total;
+    }
+
+    public int read(byte[] dst, int offset, int len) {
+        return read(mStart, dst, offset, len);
     }
 
     public byte[] pop(int len) {
-        int readLen = Math.min(size(), len);
-        if (readLen == 0) {
+        int realLen = Math.min(size(), len);
+        if (realLen == 0) {
             return null;
         }
 
-        byte[] buffer = new byte[len];
-        read(buffer);
-        mStart = (mStart + len) % (mCapacity + 1);
+        byte[] buffer = new byte[realLen];
+        read(buffer, 0, realLen);
+        mStart = (mStart + realLen) % (mCapacity + 1);
 
         return buffer;
     }
