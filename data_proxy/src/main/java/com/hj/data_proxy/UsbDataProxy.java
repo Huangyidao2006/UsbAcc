@@ -84,6 +84,9 @@ public class UsbDataProxy {
                     mUsbListener.onAccessoryAttached(accessory);
                 }
             } else if (UsbManager.ACTION_USB_ACCESSORY_DETACHED.equals(action)) {
+                // disconnect
+                disconnect();
+
                 if (mUsbListener != null) {
                     mUsbListener.onAccessoryDetached(accessory);
                 }
@@ -241,7 +244,7 @@ public class UsbDataProxy {
 
                                         // 解析并处理
                                         Proxy.ProxyMsg proxyMsg = Proxy.ProxyMsg.parseFrom(frameData);
-                                        processProxyMsg(proxyMsg);
+                                        processReceivedMsg(proxyMsg);
                                     } else {
                                         // 不够一帧，应继续收数据
                                         break;
@@ -249,6 +252,8 @@ public class UsbDataProxy {
                                 } else {
                                     // 不是帧头，出错了
                                     CatLogger.e(TAG, "wrong frame header");
+
+                                    mFrameBuffer.clear();
                                     break;
                                 }
                             } else {
@@ -270,13 +275,17 @@ public class UsbDataProxy {
         }
     }
 
-    private void processProxyMsg(Proxy.ProxyMsg proxyMsg) {
+    private void processReceivedMsg(Proxy.ProxyMsg proxyMsg) {
+        int msgId = proxyMsg.getMsgId();
         int connId = proxyMsg.getConnId();
         int ackId = proxyMsg.getAckId();
         Proxy.MsgType msgType = proxyMsg.getMsgType();
 
-        CatLogger.d(TAG, "process received msg, connId=%d, ackId=%d, msgType=%s, ip=%s, port=%d",
-                connId, ackId, msgType.toString(), proxyMsg.getIp(), proxyMsg.getPort());
+        CatLogger.d(TAG, "processReceivedMsg, msgId=%d, ackId=%d, connId=%d, msgType=%s, ip=%s, port=%d, " +
+                        "arg1=%d, arg2=%d, arg3=%s, arg4_len=%d",
+                msgId, ackId, connId, msgType.toString(), proxyMsg.getIp(), proxyMsg.getPort(),
+                proxyMsg.getData().getArg1(), proxyMsg.getData().getArg2(), proxyMsg.getData().getArg3(),
+                proxyMsg.getData().getArg4() == null ? 0 : proxyMsg.getData().getArg4().toByteArray().length);
 
         if (Proxy.MsgType.RESULT == msgType) {
             MsgResult msgResult = mMsgResultMap.get(ackId);
@@ -294,6 +303,15 @@ public class UsbDataProxy {
                 if (listener != null) {
                     listener.onError(proxyMsg.getData().getArg1(), proxyMsg.getData().getArg3());
                 }
+            }
+
+            MsgResult msgResult = mMsgResultMap.get(ackId);
+            if (msgResult != null) {
+                msgResult.mRet = proxyMsg;
+
+                msgResult.mLock.lock();
+                msgResult.mCond.signal();
+                msgResult.mLock.unlock();
             }
         } else if (Proxy.MsgType.RECV == msgType) {
             NetConnection conn = mConnMap.get(connId);
@@ -345,12 +363,16 @@ public class UsbDataProxy {
 
     int sendProxyMsg(int connId, Proxy.ConnType connType, Proxy.MsgType msgType,
                      String ip, int port, int arg1, int arg2, String arg3, byte[] arg4) {
-        int msgId = getMsgId();
-        int ackId = 0;
+        if (!mIsConnected) {
+            return ErrorCode.ERROR_USB_DISCONNECTED;
+        }
 
-        CatLogger.d(TAG, "sendProxyMsg, connId=%d, ackId=%d, msgType=%s, ip=%s, port=%d, " +
+        int msgId = getMsgId();
+        int ackId = -1;
+
+        CatLogger.d(TAG, "sendProxyMsg, msgId=%d, ackId=%d, connId=%d, msgType=%s, ip=%s, port=%d, " +
                         "arg1=%d, arg2=%d, arg3=%s, arg4_len=%d",
-                connId, ackId, msgType.toString(), ip, port,
+                msgId, ackId, connId, msgType.toString(), ip, port,
                 arg1, arg2, arg3 == null ? "" : arg3, arg4 == null ? 0 : arg4.length);
 
         Proxy.MsgData.Builder msgDataBuilder = Proxy.MsgData.newBuilder();
@@ -396,7 +418,11 @@ public class UsbDataProxy {
             mMsgResultMap.remove(msgId);
 
             if (msgResult.mRet != null) {
-                ret = msgResult.mRet.getData().getArg1();
+                if (msgResult.mRet.getMsgType() != Proxy.MsgType.RESULT) {
+                    ret = ErrorCode.ERROR_FAILED;
+                } else {
+                    ret = msgResult.mRet.getData().getArg1();
+                }
             } else {
                 ret = ErrorCode.ERROR_FAILED;
             }

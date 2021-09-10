@@ -21,6 +21,7 @@ public class ErrorCode {
     public static final int ERROR_USB_SEND						= 12002;
     public static final int ERROR_USB_NO_DEV                    = 12003;
     public static final int ERROR_USB_NO_PERMISSION             = 12004;
+    public static final int ERROR_USB_DISCONNECTED              = 12005;
     public static final int ERROR_QUEUE_FULL                    = 13001;
     public static final int ERROR_QUEUE_EMPTY                   = 13002;
     public static final int ERROR_NO_SUCH_CONN					= 14001;

@@ -12,6 +12,10 @@ public class UdpConnection extends NetConnection {
 
     @Override
     public int sendTo(byte[] data, String ip, int port) {
+        if (mIsClosed) {
+            return ErrorCode.ERROR_INVALID_OPERATION;
+        }
+
         int ret = mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.UDP, Proxy.MsgType.SEND, ip, port,
                 0, 0, "", data);
         return ret;

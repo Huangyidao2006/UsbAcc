@@ -27,7 +27,7 @@ public class TcpConnection extends NetConnection {
 
     @Override
     public int send(byte[] data) {
-        if (!mIsConnected) {
+        if (!mIsConnected || mIsClosed) {
             return ErrorCode.ERROR_INVALID_OPERATION;
         }
 
@@ -46,7 +46,9 @@ public class TcpConnection extends NetConnection {
             return;
         }
 
+        mIsConnected = false;
         mIsClosed = true;
+
         mUsbDataProxy.sendProxyMsg(mId, Proxy.ConnType.TCP, Proxy.MsgType.CLOSE, "", 0,
                 0, 0, "", null);
     }

@@ -272,6 +272,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         mTcpConn.close();
+        mTcpConn = null;
     }
 
     private UsbDataProxy mUsbDataProxy;
