@@ -7,7 +7,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.usb.UsbAccessory;
 import android.hardware.usb.UsbManager;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.os.Message;
 import android.os.ParcelFileDescriptor;
+
+import androidx.annotation.NonNull;
 
 import com.google.protobuf.ByteString;
 import com.hj.data_proxy.buffer.DataBuffer;
@@ -154,6 +160,9 @@ public class UsbDataProxy {
 
         mIsConnected = true;
 
+        // 开始心跳
+        startHeartBeat(2000);
+
         if (mUsbListener != null) {
             mUsbListener.onConnected(curUsb);
         }
@@ -166,6 +175,7 @@ public class UsbDataProxy {
             return;
         }
 
+        stopHeartBeat();
         closeAllNetConn();
 
         if (mRecvThread != null) {
@@ -188,6 +198,8 @@ public class UsbDataProxy {
     }
 
     public void destroy() {
+        CatLogger.d(TAG, "destroy Proxy");
+
         disconnect();
 
         unregisterReceivers();
@@ -476,7 +488,7 @@ public class UsbDataProxy {
         }
     }
 
-    private class MsgResult {
+    private static class MsgResult {
         public int mMsgId;
         public ReentrantLock mLock;
         public Condition mCond;
@@ -523,5 +535,60 @@ public class UsbDataProxy {
         }
 
         return conn;
+    }
+
+    private static final int MSG_HEARTBEAT = 1;
+
+    private int mHeartBeatIntervalMs = 2000;
+    private boolean mIsStopHeartBeat = false;
+
+    private HandlerThread mHeartBeatThread;
+    private HeartBeatHandler mHeartBeatHandler;
+
+    private void startHeartBeat(int intervalMs) {
+        if (mHeartBeatHandler == null) {
+            mHeartBeatIntervalMs = intervalMs;
+            mIsStopHeartBeat = false;
+
+            mHeartBeatThread = new HandlerThread("heartbeat");
+            mHeartBeatThread.start();
+
+            mHeartBeatHandler = new HeartBeatHandler(mHeartBeatThread.getLooper());
+            mHeartBeatHandler.sendEmptyMessage(MSG_HEARTBEAT);
+
+            CatLogger.d(TAG, "start usb heartbeat");
+        }
+    }
+
+    private void stopHeartBeat() {
+        if (mHeartBeatHandler != null) {
+            mIsStopHeartBeat = true;
+
+            mHeartBeatHandler.removeMessages(MSG_HEARTBEAT);
+            mHeartBeatThread.quit();
+
+            mHeartBeatHandler = null;
+
+            CatLogger.d(TAG, "stop usb heartbeat");
+        }
+    }
+
+    // USB心跳相关，代理一段时间没有收到手机端的心跳，则会断开所有网络连接
+    class HeartBeatHandler extends Handler {
+        public HeartBeatHandler(Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            if (msg.what == MSG_HEARTBEAT) {
+                sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.USB_HEART_BEAT,
+                        "", 0, 0, 0, "heartbeat", null);
+
+                if (!mIsStopHeartBeat) {
+                    sendEmptyMessageDelayed(MSG_HEARTBEAT, mHeartBeatIntervalMs);
+                }
+            }
+        }
     }
 }

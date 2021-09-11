@@ -16,6 +16,7 @@ enum MsgType {
   CREATE = 5;
   RESULT = 6;
   CLOSE_ALL = 7;
+  USB_HEART_BEAT = 8;
 }
 
 message MsgData {
