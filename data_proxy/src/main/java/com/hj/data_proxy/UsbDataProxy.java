@@ -7,7 +7,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.usb.UsbAccessory;
 import android.hardware.usb.UsbManager;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.os.Message;
 import android.os.ParcelFileDescriptor;
+
+import androidx.annotation.NonNull;
 
 import com.google.protobuf.ByteString;
 import com.hj.data_proxy.buffer.DataBuffer;
@@ -154,6 +160,9 @@ public class UsbDataProxy {
 
         mIsConnected = true;
 
+        // 开始心跳
+        startHeartBeat(2000);
+
         if (mUsbListener != null) {
             mUsbListener.onConnected(curUsb);
         }
@@ -165,6 +174,9 @@ public class UsbDataProxy {
         if (!mIsConnected) {
             return;
         }
+
+        stopHeartBeat();
+        closeAllNetConn();
 
         if (mRecvThread != null) {
             mRecvThread.stopRun();
@@ -186,6 +198,8 @@ public class UsbDataProxy {
     }
 
     public void destroy() {
+        CatLogger.d(TAG, "destroy Proxy");
+
         disconnect();
 
         unregisterReceivers();
@@ -346,6 +360,15 @@ public class UsbDataProxy {
         return offset;
     }
 
+    private void closeAllNetConn() {
+        mMsgResultMap.clear();
+        mConnMap.clear();
+
+        // connId为-1，表示全局消息，并不是针对某条连接
+        sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.CLOSE_ALL,
+                "", 0, 0, 0, null, null);
+    }
+
     private boolean sendProxyMsg(Proxy.ProxyMsg proxyMsg) {
         byte[] frameData = proxyMsg.toByteArray();
         byte[] framePacket = new byte[FRAME_HEADER_LEN + frameData.length];
@@ -397,41 +420,53 @@ public class UsbDataProxy {
         int ret = 0;
 
         if (isSent) {
-            MsgResult msgResult = new MsgResult();
-            msgResult.mMsgId = msgId;
-            msgResult.mLock = new ReentrantLock();
-            msgResult.mCond = msgResult.mLock.newCondition();
-            mMsgResultMap.put(msgId, msgResult);
-
-            msgResult.mLock.lock();
-
-            try {
-                // 等待结果返回
-                msgResult.mCond.await(1000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                msgResult.mLock.unlock();
-            }
-
-            // 从map中去掉
-            mMsgResultMap.remove(msgId);
-
-            if (msgResult.mRet != null) {
-                if (msgResult.mRet.getMsgType() != Proxy.MsgType.RESULT) {
-                    ret = ErrorCode.ERROR_FAILED;
-                } else {
-                    ret = msgResult.mRet.getData().getArg1();
-                }
-            } else {
-                ret = ErrorCode.ERROR_FAILED;
+            if (Proxy.MsgType.CLOSE_ALL != msgType) {
+                ret = syncGetResult(msgId);
             }
         } else {
             ret = ErrorCode.ERROR_USB_SEND;
         }
 
+        if (Proxy.MsgType.CLOSE == msgType) {
+            mConnMap.remove(connId);
+        }
+
         CatLogger.d(TAG, "sendProxyMsg, ret=%d", ret);
 
+        return ret;
+    }
+
+    private int syncGetResult(int msgId) {
+        int ret;
+        MsgResult msgResult = new MsgResult();
+        msgResult.mMsgId = msgId;
+        msgResult.mLock = new ReentrantLock();
+        msgResult.mCond = msgResult.mLock.newCondition();
+        mMsgResultMap.put(msgId, msgResult);
+
+        msgResult.mLock.lock();
+
+        try {
+            // 等待结果返回
+            msgResult.mCond.await(1000, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            msgResult.mLock.unlock();
+        }
+
+        // 从map中去掉
+        mMsgResultMap.remove(msgId);
+
+        if (msgResult.mRet != null) {
+            if (msgResult.mRet.getMsgType() != Proxy.MsgType.RESULT) {
+                ret = ErrorCode.ERROR_FAILED;
+            } else {
+                ret = msgResult.mRet.getData().getArg1();
+            }
+        } else {
+            ret = ErrorCode.ERROR_FAILED;
+        }
         return ret;
     }
 
@@ -453,7 +488,7 @@ public class UsbDataProxy {
         }
     }
 
-    private class MsgResult {
+    private static class MsgResult {
         public int mMsgId;
         public ReentrantLock mLock;
         public Condition mCond;
@@ -500,5 +535,60 @@ public class UsbDataProxy {
         }
 
         return conn;
+    }
+
+    private static final int MSG_HEARTBEAT = 1;
+
+    private int mHeartBeatIntervalMs = 2000;
+    private boolean mIsStopHeartBeat = false;
+
+    private HandlerThread mHeartBeatThread;
+    private HeartBeatHandler mHeartBeatHandler;
+
+    private void startHeartBeat(int intervalMs) {
+        if (mHeartBeatHandler == null) {
+            mHeartBeatIntervalMs = intervalMs;
+            mIsStopHeartBeat = false;
+
+            mHeartBeatThread = new HandlerThread("heartbeat");
+            mHeartBeatThread.start();
+
+            mHeartBeatHandler = new HeartBeatHandler(mHeartBeatThread.getLooper());
+            mHeartBeatHandler.sendEmptyMessage(MSG_HEARTBEAT);
+
+            CatLogger.d(TAG, "start usb heartbeat");
+        }
+    }
+
+    private void stopHeartBeat() {
+        if (mHeartBeatHandler != null) {
+            mIsStopHeartBeat = true;
+
+            mHeartBeatHandler.removeMessages(MSG_HEARTBEAT);
+            mHeartBeatThread.quit();
+
+            mHeartBeatHandler = null;
+
+            CatLogger.d(TAG, "stop usb heartbeat");
+        }
+    }
+
+    // USB心跳相关，代理一段时间没有收到手机端的心跳，则会断开所有网络连接
+    class HeartBeatHandler extends Handler {
+        public HeartBeatHandler(Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            if (msg.what == MSG_HEARTBEAT) {
+                sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.USB_HEART_BEAT,
+                        "", 0, 0, 0, "heartbeat", null);
+
+                if (!mIsStopHeartBeat) {
+                    sendEmptyMessageDelayed(MSG_HEARTBEAT, mHeartBeatIntervalMs);
+                }
+            }
+        }
     }
 }

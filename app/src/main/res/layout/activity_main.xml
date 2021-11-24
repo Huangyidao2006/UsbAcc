@@ -155,7 +155,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="2"
                     android:hint="dst socket"
-                    android:text="127.0.0.1:5678" />
+                    android:text="127.0.0.1:2345" />
 
                 <Button
                     android:id="@+id/btn_sendUdp"
