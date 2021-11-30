@@ -406,7 +406,7 @@ public class UsbDataProxy {
 
         Proxy.MsgData msgData = msgDataBuilder.build();
 
-                Proxy.ProxyMsg.Builder builder = Proxy.ProxyMsg.newBuilder();
+        Proxy.ProxyMsg.Builder builder = Proxy.ProxyMsg.newBuilder();
         builder.setMsgId(msgId)
                 .setAckId(ackId)
                 .setConnId(connId)
@@ -582,8 +582,15 @@ public class UsbDataProxy {
         @Override
         public void handleMessage(@NonNull Message msg) {
             if (msg.what == MSG_HEARTBEAT) {
-                sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.USB_HEART_BEAT,
+                CatLogger.d(TAG, "send heartbeat");
+
+                int ret = sendProxyMsg(-1, Proxy.ConnType.TCP, Proxy.MsgType.USB_HEART_BEAT,
                         "", 0, 0, 0, "heartbeat", null);
+                if (ErrorCode.SUCCESS != ret) {
+                    CatLogger.e(TAG, "receive heartbeat ack failed, disconnected");
+
+                    disconnect();
+                }
 
                 if (!mIsStopHeartBeat) {
                     sendEmptyMessageDelayed(MSG_HEARTBEAT, mHeartBeatIntervalMs);
